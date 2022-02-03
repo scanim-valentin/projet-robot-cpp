@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" modified="2022-02-03T10:33:37.263Z" agent="5.0 (X11)" etag="2OEUUAUzUibjlKnFQfJd" version="15.8.7" type="github">
+<mxfile host="app.diagrams.net" modified="2022-02-03T10:34:08.001Z" agent="5.0 (X11)" etag="lYkv0Bx2XNfADSXPZUwJ" version="15.8.7" type="github">
   <diagram id="CIw4tXAHv_-aNhbZJtuN" name="Page-1">
     <mxGraphModel dx="981" dy="912" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
@@ -8,7 +8,7 @@
           <mxGeometry x="133.33" y="310" width="120" height="30" as="geometry" />
         </mxCell>
         <mxCell id="5DaIw1ma8Wy_vV2Rz7nk-2" value="Etablissement de la connexion avec le moniteur" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
-          <mxGeometry x="350" y="310" width="120" height="50" as="geometry" />
+          <mxGeometry x="370" y="300" width="120" height="50" as="geometry" />
         </mxCell>
         <mxCell id="5DaIw1ma8Wy_vV2Rz7nk-3" value="Traiter les messages en provenance du moniteur" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
           <mxGeometry x="530" y="180" width="150" height="40" as="geometry" />
