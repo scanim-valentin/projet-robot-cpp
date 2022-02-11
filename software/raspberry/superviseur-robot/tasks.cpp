@@ -173,10 +173,9 @@ void Tasks::Run() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::CheckBattery, this)) {
-        cerr << "Error task start: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
+            cerr << "Error task start: " << strerror(-err) << endl << flush;
+            exit(EXIT_FAILURE);
     }
-
     cout << "Tasks launched" << endl << flush;
 }
 
@@ -312,7 +311,6 @@ void Tasks::OpenComRobot(void *arg) {
         rt_mutex_release(&mutex_robot);
         cout << status;
         cout << ")" << endl << flush;
-
         Message * msgSend;
         if (status < 0) {
             msgSend = new Message(MESSAGE_ANSWER_NACK);
@@ -374,7 +372,7 @@ void Tasks::MoveTask(void *arg) {
 
     while (1) {
         rt_task_wait_period(NULL);
-        cout << "Periodic movement update";
+        //cout << "Periodic movement update";
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
         rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
@@ -389,7 +387,7 @@ void Tasks::MoveTask(void *arg) {
             robot.Write(new Message((MessageID)cpMove));
             rt_mutex_release(&mutex_robot);
         }
-        cout << endl << flush;
+        //cout << endl << flush;
     }
 }
 
@@ -407,13 +405,51 @@ void Tasks::WriteInQueue(RT_QUEUE *queue, Message *msg) {
 }
 
 void Tasks::CheckBattery(void *arg) {
-    Message *batLvl;
-    if((batLvl = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET))) == 0) {
-        cout << "erreur de communication avec le robot" << endl << flush; 
+    Message *batLvl = 0;
+    
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    /**************************************************************************************/
+    /* The task starts here                                                               */
+    /**************************************************************************************/
+    rt_task_set_periodic(NULL, TM_NOW, 500000000);
+    while (1) {
+        rt_task_wait_period(NULL);
+        //cout << "acquisition mutex_robotStarted" << endl << flush; 
+        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+        int rs = robotStarted;
+        rt_mutex_release(&mutex_robotStarted);
+        //cout << "released mutex_robotStarted" << endl << flush;
+        //cout << "Battery: "; 
+        //cout << "acquisition mutex_robot" << endl << flush;
+        
+        if(rs == 1){
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            batLvl = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
+            rt_mutex_release(&mutex_robot);
+            //cout << "released mutex_robot" << endl << flush;
+            if(0 == batLvl) {
+                //cout << "erreur de communication avec le robot" << endl << flush; 
+            }else{
+                //cout << batLvl << endl << flush;
+                //cout << "Write batLvl" << endl << flush;
+                //RCLS
+                WriteInQueue(&q_messageToMon, batLvl);
+                if(batLvl->CompareID((MessageID)BATTERY_EMPTY)){
+                    cout << "battery EMPTY!!!!" << endl << flush;
+                    exit(EXIT_FAILURE);
+                }
+                //cout << "Written batLvl" << endl << flush;
+            }
+            
+        }else{
+            //cout << "Robot not started !!!!!" << endl << flush;
+        }
+
+        
     }
-    cout << "Battery : " << batLvl->ToString() << endl << flush;
-    //TODO : send battery level to monitor and check if not too low
-    WriteInQueue(&q_messageToMon, batLvl);
 }
 
 /**
