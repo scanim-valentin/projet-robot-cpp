@@ -453,6 +453,45 @@ void Tasks::CheckBattery(void *arg) {
 }
 
 /**
+ * @brief Check for robot communication using a counter
+ */
+void Task::RobotComCheck(void *arg) {
+    int counter = 0;
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
+    /**************************************************************************************/
+    /* The task starts here                                                               */
+    /**************************************************************************************/
+    while (1) {
+        rt_sem_p(&......, TM_INFINITE); // Need another semaphore?
+        counter -= MSG_CODE;
+        
+        // Check counter
+        if (counter >= 3) {
+            // Deconnecter robot com
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            robot.Close();
+            rt_mutex_release(&mutex_robot);
+            cout << status;
+            cout << ")" << endl << flush;
+            
+            // Send message to monitor
+            WriteInQueue(&q_messageToMon, (MessageID)MESSAGE_ROBOT_COM_CLOSE);
+            
+            // Need to add this after each robot.Write////////////////////////////
+            if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
+                MSG_CODE = -1;
+            } else {
+                MSG_CODE = 1;
+            }
+                rt_sem_v(&......);
+            ///////////////////////////////////////////////////////////////////
+                
+        }
+    }
+}
+
+/**
  * Read a message from a given queue, block if empty
  * @param queue Queue identifier
  * @return Message read
