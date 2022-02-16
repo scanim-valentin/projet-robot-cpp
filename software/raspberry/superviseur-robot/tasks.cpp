@@ -346,18 +346,9 @@ void Tasks::StartRobotTask(void *arg) {
         rt_sem_p(&sem_startRobot, TM_INFINITE);
         cout << "Start robot without watchdog (";
         
-        // Start critical section
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-        msgSend = robot.Write(robot.StartWithoutWD());
-        // Check robot communication with a counter
-        if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
-            MSG_CODE = -1;
-        } else {
-            MSG_CODE = 1;
-        }
-        rt_sem_v(&sem_checkcomrobot);
+        msgSend = Write(robot.StartWithoutWD());
         rt_mutex_release(&mutex_robot);
-        // End critical section
         
         cout << msgSend->GetID();
         cout << ")" << endl;
@@ -390,7 +381,6 @@ void Tasks::MoveTask(void *arg) {
     rt_task_set_periodic(NULL, TM_NOW, 100000000);
 
     while (1) {
-        Message * msgSend;
         rt_task_wait_period(NULL);
         //cout << "Periodic movement update";
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
@@ -403,18 +393,9 @@ void Tasks::MoveTask(void *arg) {
             
             cout << " move: " << cpMove;
             
-            // Start critical section
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            msgSend = robot.Write(new Message((MessageID)cpMove));
-            // Check robot communication with a counter
-            if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
-                MSG_CODE = -1;
-            } else {
-                MSG_CODE = 1;
-            }
-            rt_sem_v(&sem_checkcomrobot);
+            Write(new Message((MessageID)cpMove));
             rt_mutex_release(&mutex_robot);
-            // End critical section
         }
         //cout << endl << flush;
     }
@@ -455,18 +436,9 @@ void Tasks::CheckBattery(void *arg) {
         //cout << "acquisition mutex_robot" << endl << flush;
         
         if(rs == 1){
-            // Start critical section
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            batLvl = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
-            // Check robot communication with a counter
-            if (batLvl->compareID(MESSAGE_ANSWER_COM_ERROR)) {
-                MSG_CODE = -1;
-            } else {
-                MSG_CODE = 1;
-            }
-            rt_sem_v(&sem_checkcomrobot);
+            batLvl = Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
             rt_mutex_release(&mutex_robot);
-            // End critical section
             
             //cout << "released mutex_robot" << endl << flush;
             if(0 == batLvl) {
@@ -540,3 +512,15 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
     return msg;
 }
 
+Message *Task::Write(Message *mess) {
+    Message *msgSend;
+    msgSend = robot.Write(mess);
+    // Check robot communication with a counter
+    if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
+        MSG_CODE = -1;
+    } else {
+        MSG_CODE = 1;
+    }
+    rt_sem_v(&sem_checkcomrobot);
+    return msg;
+}
