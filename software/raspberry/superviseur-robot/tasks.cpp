@@ -95,6 +95,10 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_sem_create(&sem_checkcomrobot, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     cout << "Semaphores created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -173,6 +177,10 @@ void Tasks::Run() {
         exit(EXIT_FAILURE);
     }
     if (err = rt_task_start(&th_battery, (void(*)(void*)) & Tasks::CheckBattery, this)) {
+            cerr << "Error task start: " << strerror(-err) << endl << flush;
+            exit(EXIT_FAILURE);
+    }
+    if (err = rt_task_start(&th_checkcomrobot, (void(*)(void*)) & Tasks::CheckComRobot, this)) {
             cerr << "Error task start: " << strerror(-err) << endl << flush;
             exit(EXIT_FAILURE);
     }
@@ -337,9 +345,20 @@ void Tasks::StartRobotTask(void *arg) {
         Message * msgSend;
         rt_sem_p(&sem_startRobot, TM_INFINITE);
         cout << "Start robot without watchdog (";
+        
+        // Start critical section
         rt_mutex_acquire(&mutex_robot, TM_INFINITE);
         msgSend = robot.Write(robot.StartWithoutWD());
+        // Check robot communication with a counter
+        if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
+            MSG_CODE = -1;
+        } else {
+            MSG_CODE = 1;
+        }
+        rt_sem_v(&sem_checkcomrobot);
         rt_mutex_release(&mutex_robot);
+        // End critical section
+        
         cout << msgSend->GetID();
         cout << ")" << endl;
 
@@ -371,6 +390,7 @@ void Tasks::MoveTask(void *arg) {
     rt_task_set_periodic(NULL, TM_NOW, 100000000);
 
     while (1) {
+        Message * msgSend;
         rt_task_wait_period(NULL);
         //cout << "Periodic movement update";
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
@@ -383,9 +403,18 @@ void Tasks::MoveTask(void *arg) {
             
             cout << " move: " << cpMove;
             
+            // Start critical section
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            robot.Write(new Message((MessageID)cpMove));
+            msgSend = robot.Write(new Message((MessageID)cpMove));
+            // Check robot communication with a counter
+            if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
+                MSG_CODE = -1;
+            } else {
+                MSG_CODE = 1;
+            }
+            rt_sem_v(&sem_checkcomrobot);
             rt_mutex_release(&mutex_robot);
+            // End critical section
         }
         //cout << endl << flush;
     }
@@ -426,9 +455,19 @@ void Tasks::CheckBattery(void *arg) {
         //cout << "acquisition mutex_robot" << endl << flush;
         
         if(rs == 1){
+            // Start critical section
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             batLvl = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
+            // Check robot communication with a counter
+            if (batLvl->compareID(MESSAGE_ANSWER_COM_ERROR)) {
+                MSG_CODE = -1;
+            } else {
+                MSG_CODE = 1;
+            }
+            rt_sem_v(&sem_checkcomrobot);
             rt_mutex_release(&mutex_robot);
+            // End critical section
+            
             //cout << "released mutex_robot" << endl << flush;
             if(0 == batLvl) {
                 //cout << "erreur de communication avec le robot" << endl << flush; 
@@ -455,7 +494,7 @@ void Tasks::CheckBattery(void *arg) {
 /**
  * @brief Check for robot communication using a counter
  */
-void Task::RobotComCheck(void *arg) {
+void Task::CheckComRobot(void *arg) {
     int counter = 0;
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
@@ -463,7 +502,7 @@ void Task::RobotComCheck(void *arg) {
     /* The task starts here                                                               */
     /**************************************************************************************/
     while (1) {
-        rt_sem_p(&......, TM_INFINITE); // Need another semaphore?
+        rt_sem_p(&sem_openComRobot, TM_INFINITE);
         counter -= MSG_CODE;
         
         // Check counter
@@ -476,18 +515,9 @@ void Task::RobotComCheck(void *arg) {
             cout << ")" << endl << flush;
             
             // Send message to monitor
-            WriteInQueue(&q_messageToMon, (MessageID)MESSAGE_ROBOT_COM_CLOSE);
-            
-            // Need to add this after each robot.Write////////////////////////////
-            if (msgSend->compareID(MESSAGE_ANSWER_COM_ERROR)) {
-                MSG_CODE = -1;
-            } else {
-                MSG_CODE = 1;
-            }
-                rt_sem_v(&......);
-            ///////////////////////////////////////////////////////////////////
-                
+            WriteInQueue(&q_messageToMon, (MessageID)MESSAGE_ROBOT_COM_CLOSE);                
         }
+        MSG_CODE = 0;
     }
 }
 

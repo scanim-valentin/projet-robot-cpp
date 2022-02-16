@@ -77,6 +77,7 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
+    RT_TASK th_checkcomrobot;
     
     /**********************************************************************/
     /* Mutex                                                              */
@@ -93,6 +94,7 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    RT_SEM sem_checkcomrobot;
 
     /**********************************************************************/
     /* Message queues                                                     */
