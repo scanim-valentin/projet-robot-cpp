@@ -228,6 +228,11 @@ void Tasks::ServerTask(void *arg) {
     monitor.AcceptClient(); // Wait the monitor client
     cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
     rt_sem_broadcast(&sem_serverOk);
+    
+    //Raffraichissement du WD du ROBOT
+    while(ROBOT_WD){
+        robot.ReloadWD(); 
+    }
 }
 
 /**
@@ -258,6 +263,7 @@ void Tasks::SendToMonTask(void* arg) {
 /**
  * @brief Thread receiving data from monitor.
  */
+char ROBOT_WD = 0 ; 
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
     
@@ -283,6 +289,9 @@ void Tasks::ReceiveFromMonTask(void *arg) {
             rt_sem_v(&sem_openComRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
             rt_sem_v(&sem_startRobot);
+        } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
+            rt_sem_v(&sem_startRobot);
+            ROBOT_WD = 1 ; 
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
