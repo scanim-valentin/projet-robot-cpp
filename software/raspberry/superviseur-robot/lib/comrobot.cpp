@@ -117,7 +117,7 @@ Message *ComRobot::Write(Message* msg) {
         s = MessageToString(msg);
         AddChecksum(s);
 
-        //cout << "[" <<__PRETTY_FUNCTION__<<"] Send command: "<<s<<endl<<flush;
+        cout << "[" <<__PRETTY_FUNCTION__<<"] Send command: "<<s<<endl<<flush;
         int count = write(this->fd, s.c_str(), s.length()); //Filestream, bytes to write, number of bytes to write
 
         if (count < 0) {
@@ -127,7 +127,7 @@ Message *ComRobot::Write(Message* msg) {
 
             try {
                 s = Read();
-                //cout << "Answer = "<<s<<endl<<flush;
+                cout << "Answer = "<<s<<endl<<flush;
 
                 if (VerifyChecksum(s)) {
                     msgAnswer = StringToMessage(s);

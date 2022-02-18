@@ -64,13 +64,14 @@ private:
     /**********************************************************************/
     ComMonitor monitor;
     ComRobot robot;
-    int robotStarted = 0;
+    bool robotStarted = false;
     int move = MESSAGE_ROBOT_STOP;
     
     /**********************************************************************/
     /* Tasks                                                              */
     /**********************************************************************/
     RT_TASK th_server;
+    RT_TASK th_watchdog;
     RT_TASK th_sendToMon;
     RT_TASK th_receiveFromMon;
     RT_TASK th_openComRobot;
@@ -86,6 +87,7 @@ private:
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
+    RT_MUTEX mutex_codeErr;
 
     /**********************************************************************/
     /* Semaphores                                                         */
@@ -95,7 +97,10 @@ private:
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
     RT_SEM sem_checkcomrobot;
-
+    RT_SEM sem_servInit ;
+    RT_SEM sem_camInit ;
+    RT_SEM sem_newMove ;
+    
     /**********************************************************************/
     /* Message queues                                                     */
     /**********************************************************************/
@@ -106,15 +111,25 @@ private:
     /* Message code
      * valid (1) or error (-1)                                                   */
     /**********************************************************************/
-    int MSG_CODE;
+    int err_com_robot;
     
     /**********************************************************************/
     /* Tasks' functions                                                   */
     /**********************************************************************/
     /**
+     * @brief function handling the error count given the message received
+     */
+    void CheckCom(Message * msgRcv);
+    
+    /**
      * @brief Thread handling server communication with the monitor.
      */
     void ServerTask(void *arg);
+    
+    /**
+     * @brief Thread reseting the watchdog counter
+     */
+    void RefreshWD(void *arg);
      
     /**
      * @brief Thread sending data to monitor.
@@ -162,6 +177,13 @@ private:
      * @brief Thread checking battery level
      */
     void CheckBattery(void *arg);
+    
+    /**
+     * @brief Thread checking battery level
+     */
+    void CheckComRobot(void *arg);
+    
+    bool ROBOT_WD = false ; 
 
 };
 
