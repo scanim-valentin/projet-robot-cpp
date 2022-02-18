@@ -122,6 +122,11 @@ private:
     void CheckCom(Message * msgRcv);
     
     /**
+     * @brief function closing the communication with the robot, and setting its semaphores accordingly
+     */
+    void CloseComRobot();
+    
+    /**
      * @brief Thread handling server communication with the monitor.
      */
     void ServerTask(void *arg);

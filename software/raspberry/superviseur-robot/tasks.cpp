@@ -28,6 +28,7 @@
 #define PRIORITY_TCAMERA 21
 #define PRIORITY_TBATTERY 20
 #define PRIORITY_TCOMROBOT 26
+#define PRIORITY_TWDRELOAD 29
 
 #define PERIODE_BATTERIE 500000000
 #define PERIODE_MOVE     100000000
@@ -153,7 +154,7 @@ void Tasks::Init() {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    if (err = rt_task_create(&th_watchdog, "th_watchdog", 0, PRIORITY_TCOMROBOT, 0)) {
+    if (err = rt_task_create(&th_watchdog, "th_watchdog", 0, PRIORITY_TWDRELOAD, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -271,7 +272,7 @@ void Tasks::ServerTask(void *arg) {
 void Tasks::RefreshWD(void *arg) {
     int err;
     Message * msgRcv;
-    cout << "Reset Watchdog " << __PRETTY_FUNCTION__ << endl << flush;
+    cout << "Start Watchdog sender " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are started)
     rt_sem_p(&sem_barrier, TM_INFINITE);
     
@@ -286,6 +287,7 @@ void Tasks::RefreshWD(void *arg) {
             msgRcv = robot.Write(robot.ReloadWD()) ;
             rt_mutex_release(&mutex_robot);
             cout << "RefreshWD: robot.Write(robot.ReloadWD()) = " << msgRcv->ToString() << endl << flush ;
+            WriteInQueue(&q_messageToMon, msgRcv);
             CheckCom(msgRcv);
         }
     }
@@ -319,7 +321,6 @@ void Tasks::SendToMonTask(void* arg) {
 /**
  * @brief Thread receiving data from monitor.
  */
-
 void Tasks::ReceiveFromMonTask(void *arg) {
     Message *msgRcv;
     
@@ -338,40 +339,37 @@ void Tasks::ReceiveFromMonTask(void *arg) {
         cout << "Rcv <= " << msgRcv->ToString() << endl << flush;
 
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) { //Sur perte de connexion avec le moniteur: consigne de stop envoyée au robot suivi de la fermeture des communications
-            rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-            robotStarted = false;
-            rt_mutex_release(&mutex_robotStarted);
-            robot.Write(robot.Stop());
-            robot.Close() ; 
+            CloseComRobot();
+            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
             monitor.Close() ; 
+            rt_mutex_release(&mutex_monitor);
             rt_sem_v(&sem_servInit); //Réactivation du sémaphore d'initialisation pour l'écoute sur les ports serveurs
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_CLOSE)) { //idem sans moniteur 
-            rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-            robotStarted = false;
-            rt_mutex_release(&mutex_robotStarted);
-            robot.Write(robot.Stop()); 
-            robot.Close() ; 
+            CloseComRobot();
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
             rt_sem_v(&sem_openComRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
+            ROBOT_WD = false ;
             rt_sem_v(&sem_startRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITH_WD)) {
             ROBOT_WD = true ;
             rt_sem_v(&sem_startRobot); 
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_RESET)) {
-            robot.Close(); 
+            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+            robot.Write(robot.Reset());
+            rt_mutex_release(&mutex_robot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_GO_FORWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_BACKWARD) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_LEFT) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_GO_RIGHT) ||
                 msgRcv->CompareID(MESSAGE_ROBOT_STOP)) {
-
+            
             rt_mutex_acquire(&mutex_move, TM_INFINITE);
             move = msgRcv->GetID();
             rt_mutex_release(&mutex_move);
-            rt_sem_v(&sem_newMove);
+            rt_sem_v(&sem_newMove); //Trigger the send of move only when an input is pressed
         }
-        delete(msgRcv); // mus be deleted manually, no consumer
+        delete(msgRcv); // must be deleted manually, no consumer
     }
 }  
 /**
@@ -380,6 +378,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
 void Tasks::OpenComRobot(void *arg) {
     int status;
     int err;
+    Message * msgSend;
 
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -396,7 +395,6 @@ void Tasks::OpenComRobot(void *arg) {
         rt_mutex_release(&mutex_robot);
         cout << status;
         cout << ")" << endl << flush;
-        Message * msgSend;
         if (status < 0) {
             msgSend = new Message(MESSAGE_ANSWER_NACK);
         } else {
@@ -438,14 +436,7 @@ void Tasks::StartRobotTask(void *arg) {
         msgSend = robot.Write(msgToSend);
         rt_mutex_release(&mutex_robot);
         // Check robot communication with a counter
-        int err = 1 ; 
-        if (msgSend->CompareID(MESSAGE_ANSWER_COM_ERROR))    
-                err = -1;
-        rt_mutex_acquire(&mutex_codeErr, TM_INFINITE);
-        err_com_robot = err ; 
-        rt_mutex_release(&mutex_codeErr);
-        rt_sem_v(&sem_checkcomrobot);
-        
+        CheckCom(msgSend); 
 
         cout << "Movement answer: " << msgSend->ToString() << endl << flush;
         WriteInQueue(&q_messageToMon, msgSend);  // msgSend will be deleted by sendToMon
@@ -492,14 +483,9 @@ void Tasks::MoveTask(void *arg) {
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
             msgSend = robot.Write(new Message((MessageID)cpMove));
             rt_mutex_release(&mutex_robot);
+            WriteInQueue(&q_messageToMon, msgSend);
             // Check robot communication with a counter
-            int err = 1 ; 
-            if (msgSend->CompareID(MESSAGE_ANSWER_COM_ERROR))
-                err = -1 ;
-            rt_mutex_acquire(&mutex_codeErr, TM_INFINITE);
-            err_com_robot = err ; 
-            rt_mutex_release(&mutex_codeErr);
-            rt_sem_v(&sem_checkcomrobot);
+            CheckCom(msgSend);
         }
     }
 }
@@ -520,6 +506,7 @@ void Tasks::WriteInQueue(RT_QUEUE *queue, Message *msg) {
 void Tasks::CheckBattery(void *arg) {
     Message *batLvl = 0;
     int codeErr = 0;
+    bool rs;
     
     cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
     // Synchronization barrier (waiting that all tasks are starting)
@@ -533,7 +520,7 @@ void Tasks::CheckBattery(void *arg) {
         rt_task_wait_period(NULL);
         //cout << "acquisition mutex_robotStarted" << endl << flush; 
         rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-        bool rs = robotStarted;
+        rs = robotStarted;
         rt_mutex_release(&mutex_robotStarted);
         //cout << "released mutex_robotStarted" << endl << flush;
         //cout << "Battery: "; 
@@ -541,38 +528,17 @@ void Tasks::CheckBattery(void *arg) {
         
         if(rs){
             rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            batLvl = robot.Write(new Message(MESSAGE_ROBOT_BATTERY_GET));
+            batLvl = robot.Write(robot.GetBattery());
             rt_mutex_release(&mutex_robot);
             // Check robot communication with a counter
-            if (batLvl->CompareID(MESSAGE_ANSWER_COM_ERROR)) {
-                codeErr = -1;
-            } else {
-                codeErr = 1;
+            CheckCom(batLvl);
+            //cout << "Write batLvl" << batLvl << endl << flush;
+            WriteInQueue(&q_messageToMon, batLvl);
+            if(batLvl->CompareID((MessageID)BATTERY_EMPTY)){
+                cout << "battery EMPTY!!!!" << endl << flush;
+                exit(EXIT_FAILURE);
             }
-            rt_mutex_acquire(&mutex_codeErr, TM_INFINITE);
-            err_com_robot = codeErr;
-            rt_mutex_release(&mutex_codeErr);
-            rt_sem_v(&sem_checkcomrobot);
-            
-            if(0 == batLvl) {
-                //cout << "erreur de communication avec le robot" << endl << flush; 
-            }else{
-                //cout << batLvl << endl << flush;
-                //cout << "Write batLvl" << endl << flush;
-                //RCLS
-                WriteInQueue(&q_messageToMon, batLvl);
-                if(batLvl->CompareID((MessageID)BATTERY_EMPTY)){
-                    cout << "battery EMPTY!!!!" << endl << flush;
-                    exit(EXIT_FAILURE);
-                }
-                //cout << "Written batLvl" << endl << flush;
-            }
-            
-        }else{
-            //cout << "Robot not started !!!!!" << endl << flush;
-        }
-
-        
+        } //else cout << "Robot not started !!!!!" << endl << flush;
     }
 }
 
@@ -599,19 +565,14 @@ void Tasks::CheckComRobot(void *arg) {
         cout << "Com Robot Counter =  " << counter << endl << flush;
         // Check counter
         if (counter >= 3) {
-            // Deconnecter robot com
-            rt_mutex_acquire(&mutex_robot, TM_INFINITE);
-            robot.Close();
-            rt_mutex_release(&mutex_robot);
+            // Deconnect robot com
+            CloseComRobot();
+            counter = 0 ;
             
             cout << "Communication failure (counter >= 3)" << endl << flush;
             
-            // Send message to monitor
-            WriteInQueue(&q_messageToMon, new Message(MESSAGE_ROBOT_COM_CLOSE));                
+            
         }
-        /*rt_mutex_acquire(&mutex_codeErr, TM_INFINITE);
-        err_com_robot = 0;
-        rt_mutex_release(&mutex_codeErr);*/
     }
 }
 
@@ -634,9 +595,13 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
     return msg;
 }
 
+
+//Functions that are not used as threads but only as code shortens
+
 void Tasks::CheckCom(Message * msgRcv){
     int err;
-    if (msgRcv->CompareID(MESSAGE_ANSWER_ACK)){
+    if (msgRcv->CompareID(MESSAGE_ANSWER_ACK)
+            || msgRcv->CompareID(MESSAGE_ROBOT_BATTERY_LEVEL)){
         err = 1 ;
     } else {
         err = -1 ; 
@@ -644,5 +609,20 @@ void Tasks::CheckCom(Message * msgRcv){
     rt_mutex_acquire(&mutex_codeErr, TM_INFINITE);
     err_com_robot = err ;
     rt_mutex_release(&mutex_codeErr);
-    rt_sem_v(&sem_checkcomrobot);
+    rt_sem_v(&sem_checkcomrobot); //triggers one counting update given the new codeErr
+}
+
+void Tasks::CloseComRobot(){
+    Message * msgRcv;
+    
+    rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+    msgRcv = robot.Write(robot.Reset());
+    robot.Close() ; 
+    rt_mutex_release(&mutex_robot);
+    rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
+    robotStarted = false;
+    rt_mutex_release(&mutex_robotStarted);
+    
+    // Send message to monitor
+    WriteInQueue(&q_messageToMon, msgRcv);
 }
